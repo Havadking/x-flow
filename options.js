@@ -11,7 +11,7 @@
       obsidianVault: "",
       relativePathTemplate: "Clippings/X/{{yyyy}}/{{mm}}",
       attachmentPathTemplate: "Attachments/X/{{yyyy}}/{{mm}}/{{id}}",
-      fileNameTemplate: "{{pathSafeAuthor}}-{{id}}",
+      fileNameTemplate: "{{pathSafeTitle}}",
       noteTemplate: "",
       overwriteExisting: false,
       downloadImages: true,
@@ -246,7 +246,7 @@
     els.obsidianVault.value = obsConfig.obsidianVault || "";
     els.relativePathTemplate.value = obsConfig.relativePathTemplate || "Clippings/X/{{yyyy}}/{{mm}}";
     els.attachmentPathTemplate.value = obsConfig.attachmentPathTemplate || "Attachments/X/{{yyyy}}/{{mm}}/{{id}}";
-    els.fileNameTemplate.value = obsConfig.fileNameTemplate || "{{pathSafeAuthor}}-{{id}}";
+    els.fileNameTemplate.value = obsConfig.fileNameTemplate || "{{pathSafeTitle}}";
     els.downloadImages.checked = obsConfig.downloadImages !== false;
     els.overwriteExisting.checked = Boolean(obsConfig.overwriteExisting);
     els.noteTemplate.value = obsConfig.noteTemplate || core.DEFAULT_CONFIG.noteTemplate;
@@ -263,7 +263,7 @@
       obsidianVault: els.obsidianVault.value.trim(),
       relativePathTemplate: els.relativePathTemplate.value.trim() || "Clippings/X/{{yyyy}}/{{mm}}",
       attachmentPathTemplate: els.attachmentPathTemplate.value.trim() || "Attachments/X/{{yyyy}}/{{mm}}/{{id}}",
-      fileNameTemplate: els.fileNameTemplate.value.trim() || "{{pathSafeAuthor}}-{{id}}",
+      fileNameTemplate: els.fileNameTemplate.value.trim() || "{{pathSafeTitle}}",
       downloadImages: els.downloadImages.checked,
       overwriteExisting: els.overwriteExisting.checked,
       noteTemplate: els.noteTemplate.value,

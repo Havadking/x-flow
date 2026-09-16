@@ -585,7 +585,8 @@
         </div>
         <div class="field">
           <label for="fileNameTemplate">笔记文件名模板</label>
-          <input type="text" id="fileNameTemplate" placeholder="{{pathSafeAuthor}}-{{id}}" />
+          <input type="text" id="fileNameTemplate" placeholder="{{pathSafeTitle}}" />
+          <div class="hint">默认 <code>{{pathSafeTitle}}</code>（格式为：用户名 - AI极简总结），支持 <code>{{pathSafeAuthor}}</code>、<code>{{aiSummary}}</code>、<code>{{id}}</code>。</div>
         </div>
         <div class="field" style="display: flex; gap: 20px; margin-top: 12px;">
           <label class="checkbox-row">

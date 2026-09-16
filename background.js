@@ -462,6 +462,61 @@ async function getTargetFileHandle(directoryHandle, baseFileName, overwriteExist
   throw new Error("连续文件名冲突过多，请检查文件名模板。");
 }
 
+async function generateAISummary(content, author) {
+  const settings = await getSettings();
+  if (!settings.apiKey || !content) {
+    return "";
+  }
+
+  const model = "deepseek-flash";
+  const systemPrompt =
+    "你是一个推文标题概括助手。请用简短的几个字（中文，严格控制在4到12个汉字以内）高度提炼以下推文的核心事件或主题。" +
+    "要求：必须一眼能够看懂，严禁输出任何标点符号（无句号、无冒号、无逗号）、严禁书名号、严禁引号、严禁任何前缀提示词（如'标题：'、'总结：'），仅直接输出这几个字的短语。";
+
+  const userPrompt = `作者：${author || "推特用户"}\n内容：\n${content.slice(0, 1000)}`;
+
+  const body = {
+    model,
+    stream: false,
+    thinking: { type: "disabled" },
+    temperature: 0.3,
+    max_tokens: 30,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt }
+    ]
+  };
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const resp = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${settings.apiKey}`
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return "";
+    const data = await resp.json();
+    let summary = data?.choices?.[0]?.message?.content?.trim() || "";
+    summary = summary
+      .replace(/["'“”‘’《》【】「」『』:：#]/g, "")
+      .replace(/^[总结标题概括]+[：:]\s*/, "")
+      .replace(/[。！!？?]+$/, "")
+      .trim();
+    if (summary.length > 20) {
+      summary = summary.slice(0, 20);
+    }
+    return summary;
+  } catch (_) {
+    return "";
+  }
+}
+
 async function saveObsidianPost(rawPost) {
   const core = getObsidianCore();
   if (!core) {
@@ -469,7 +524,7 @@ async function saveObsidianPost(rawPost) {
   }
 
   const config = await getObsidianConfig();
-  const post = {
+  const workingPost = {
     ...rawPost,
     source: "x",
     id: String(rawPost?.id || "").trim() || `${Date.now()}`,
@@ -478,7 +533,16 @@ async function saveObsidianPost(rawPost) {
     topics: Array.isArray(rawPost?.topics) ? rawPost.topics.filter(Boolean) : []
   };
 
-  const noteKey = `x::${post.id}`;
+  // Generate short AI summary for title & note name (thinking mode disabled)
+  if (!workingPost.aiSummary) {
+    const summary = await generateAISummary(workingPost.content || "", workingPost.author || "");
+    if (summary) {
+      workingPost.aiSummary = summary;
+      workingPost.title = `${workingPost.author || "X"} - ${summary}`;
+    }
+  }
+
+  const noteKey = `x::${workingPost.id}`;
   const noteIndex = await getNoteIndex();
   const existingEntry = noteIndex[noteKey] || null;
 
@@ -496,7 +560,7 @@ async function saveObsidianPost(rawPost) {
       createdAtPretty: existingEntry?.createdAtPretty || "",
       pathOverride: existingEntry?.path || ""
     };
-    const note = core.createNote(post, config, noteState);
+    const note = core.createNote(workingPost, config, noteState);
     const path = core.getNoteTargetPath(note);
     const uri = buildObsidianUri(vault, path, note.markdown);
 
@@ -545,11 +609,6 @@ async function saveObsidianPost(rawPost) {
   const noteState = {
     createdAtPretty: existingEntry?.createdAtPretty || "",
     pathOverride: existingEntry?.path || ""
-  };
-
-  const workingPost = {
-    ...post,
-    images: [...post.images]
   };
 
   if (config.downloadImages && workingPost.images.length > 0) {
@@ -662,5 +721,6 @@ if (typeof module !== "undefined" && module.exports) {
     buildMessages,
     buildRequestBody,
     parseSSEChunk,
+    generateAISummary,
   };
 }

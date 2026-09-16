@@ -25,9 +25,10 @@
     "videos: {{videosYaml}}",
     "---",
     "",
-    "# {{title}}",
-    "",
     "{{content}}",
+    "",
+    "{{imagesMarkdown}}",
+    "{{videosMarkdown}}",
     "",
     "## 来源信息",
     "",
@@ -36,10 +37,7 @@
     "- 作者主页: {{authorUrl}}",
     "- 发布时间: {{publishedAt}}",
     "- 原文链接: {{url}}",
-    "- 话题: {{topicsCsv}}",
-    "",
-    "{{imagesMarkdown}}",
-    "{{videosMarkdown}}"
+    "- 话题: {{topicsCsv}}"
   ].join("\n");
 
   const DEFAULT_CONFIG = {
@@ -47,7 +45,7 @@
     obsidianVault: "",
     relativePathTemplate: "Clippings/X/{{yyyy}}/{{mm}}",
     attachmentPathTemplate: "Attachments/X/{{yyyy}}/{{mm}}/{{id}}",
-    fileNameTemplate: "{{pathSafeAuthor}}-{{id}}",
+    fileNameTemplate: "{{pathSafeTitle}}",
     noteTemplate: DEFAULT_NOTE_TEMPLATE,
     overwriteExisting: false,
     downloadImages: true
@@ -82,6 +80,8 @@
     "{{videosYaml}}",
     "{{topicsYaml}}",
     "{{topicsCsv}}",
+    "{{aiSummary}}",
+    "{{publishedAtRaw}}",
     "{{pathSafeAuthor}}",
     "{{pathSafeTitle}}",
     "{{yyyy}}",
@@ -260,6 +260,35 @@
     return `${weekdayNames[date.getDay()]}, ${monthNames[date.getMonth()]} ${date.getDate()}日 ${date.getFullYear()}, ${hours12}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${period}`;
   }
 
+  function formatToBeijingTime(dateInput) {
+    if (!dateInput) return "";
+    const rawStr = String(dateInput).trim();
+    const date = new Date(rawStr);
+    if (isNaN(date.getTime())) {
+      return rawStr;
+    }
+    try {
+      const formatter = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      });
+      const parts = formatter.formatToParts(date);
+      const partMap = {};
+      for (const p of parts) {
+        partMap[p.type] = p.value;
+      }
+      return `${partMap.year}-${partMap.month}-${partMap.day} ${partMap.hour}:${partMap.minute}:${partMap.second}`;
+    } catch (_) {
+      return rawStr;
+    }
+  }
+
   function buildTemplateContext(post, noteState = {}) {
     const now = new Date();
     const topics = normalizeTopics(post.topics);
@@ -267,7 +296,17 @@
     const videos = Array.isArray(post.videos) ? post.videos.filter(Boolean) : [];
     const content = String(post.content || "").trim();
     const author = String(post.author || "").trim() || "未知作者";
-    const title = titleFromContent(content);
+    const aiSummary = String(post.aiSummary || "").trim();
+    let title = String(post.title || "").trim();
+    if (!title) {
+      if (aiSummary) {
+        title = `${author} - ${aiSummary}`;
+      } else {
+        title = `${author} - ${titleFromContent(content)}`;
+      }
+    }
+    const rawPublishedAt = String(post.publishedAt || "").trim();
+    const publishedAt = formatToBeijingTime(rawPublishedAt) || rawPublishedAt;
     const source = "x";
     const sourceName = "X (Twitter)";
 
@@ -281,8 +320,12 @@
       content,
       title,
       titleYaml: escapeYamlString(title),
-      publishedAt: String(post.publishedAt || "").trim(),
-      publishedAtYaml: escapeYamlString(String(post.publishedAt || "").trim()),
+      aiSummary,
+      aiSummaryYaml: escapeYamlString(aiSummary),
+      publishedAt,
+      publishedAtYaml: escapeYamlString(publishedAt),
+      publishedAtRaw: rawPublishedAt,
+      publishedAtRawYaml: escapeYamlString(rawPublishedAt),
       capturedAt: now.toISOString(),
       capturedAtYaml: escapeYamlString(now.toISOString()),
       createdAtPretty: String(noteState.createdAtPretty || formatPrettyDate(now)),
@@ -398,6 +441,7 @@
     createAttachmentDirectoryPath,
     getNoteTargetPath,
     formatPrettyDate,
+    formatToBeijingTime,
     splitVaultPath,
     sanitizeFileName,
     sanitizePathSegment,

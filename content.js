@@ -435,16 +435,53 @@
     return all.find((el) => !el.closest('div[role="link"]')) || all[0] || null;
   }
 
-  function extractText(el) {
-    let out = "";
-    el.childNodes.forEach((node) => {
+  function extractFormattedText(el) {
+    if (!el) return "";
+
+    function walk(node) {
+      if (!node) return "";
       if (node.nodeType === Node.TEXT_NODE) {
-        out += node.textContent;
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        out += node.tagName === "IMG" ? node.getAttribute("alt") || "" : node.textContent;
+        return node.textContent || "";
       }
-    });
-    return out.trim();
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tag = node.tagName.toUpperCase();
+        if (tag === "BR") {
+          return "\n";
+        }
+        if (tag === "IMG") {
+          return node.getAttribute("alt") || "";
+        }
+        let inner = "";
+        node.childNodes.forEach((child) => {
+          inner += walk(child);
+        });
+        if (tag === "DIV" || tag === "P") {
+          return "\n" + inner + "\n";
+        }
+        return inner;
+      }
+      return "";
+    }
+
+    const raw = walk(el);
+    return cleanFormattedText(raw);
+  }
+
+  function cleanFormattedText(text) {
+    return String(text || "")
+      .replace(/\u00A0/g, " ")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n[ \t]+/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function cleanText(text) {
+    return cleanFormattedText(text);
+  }
+
+  function extractText(el) {
+    return extractFormattedText(el);
   }
 
   // Text of the quoted tweet inside the same article, used as extra context.
@@ -458,15 +495,6 @@
   }
 
   // -------------------------------------------------------- Obsidian & X extract
-
-  function cleanText(text) {
-    return String(text || "")
-      .replace(/\u00A0/g, " ")
-      .replace(/[ \t]+\n/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
 
   function isLikelyXProfileLink(href) {
     if (!href || !href.startsWith("/")) return false;
@@ -632,12 +660,79 @@
     };
   }
 
+  function extractXCardContent(article) {
+    const card = article.querySelector('[data-testid="card.wrapper"], [data-testid*="card.layout"]');
+    if (!card) return "";
+
+    const linkNode = card.closest("a[href]") || card.querySelector("a[href]");
+    const link = linkNode ? (linkNode.href || linkNode.getAttribute("href") || "") : "";
+
+    const textNodes = Array.from(card.querySelectorAll("span, div"))
+      .map((el) => cleanFormattedText(el.textContent || ""))
+      .filter((t) => t && t.length > 2 && !t.includes("http"));
+
+    const uniqueTexts = [];
+    for (const t of textNodes) {
+      if (!uniqueTexts.some((existing) => existing === t || existing.includes(t))) {
+        uniqueTexts.push(t);
+      }
+    }
+
+    if (uniqueTexts.length === 0) return "";
+
+    const headline = uniqueTexts[0];
+    const subLines = uniqueTexts.slice(1);
+
+    let md = `> **${headline}**`;
+    if (subLines.length > 0) {
+      md += `\n> ${subLines.join(" · ")}`;
+    }
+    if (link) {
+      md += `\n> 🔗 [${link}](${link})`;
+    }
+    return md;
+  }
+
+  function extractXQuoteContent(article, mainTweetTextEl) {
+    const allTexts = [...article.querySelectorAll('[data-testid="tweetText"]')];
+    const quoteTextEl = allTexts.find((el) => el !== mainTweetTextEl);
+    if (!quoteTextEl) return "";
+
+    const quoteWrapper = quoteTextEl.closest('div[role="link"]') || quoteTextEl.closest('[data-testid="quoteTweet"]');
+    let quoteAuthor = "";
+    if (quoteWrapper) {
+      const authorNode = quoteWrapper.querySelector('[data-testid="User-Name"]') || quoteWrapper.querySelector("span");
+      if (authorNode) {
+        quoteAuthor = cleanFormattedText(authorNode.textContent || "");
+      }
+    }
+
+    const quoteText = extractFormattedText(quoteTextEl);
+    if (!quoteText) return "";
+
+    const lines = quoteText.split("\n").map((line) => `> ${line}`).join("\n");
+    if (quoteAuthor) {
+      return `> 💬 **${quoteAuthor}**\n${lines}`;
+    }
+    return lines;
+  }
+
   function extractXPostData(article) {
     const statusLink = extractXStatusLink(article);
     const timeNode = statusLink?.querySelector("time");
     const author = extractXAuthor(article);
     const tweetTextEl = getMainTweetText(article);
-    const content = tweetTextEl ? extractText(tweetTextEl) : "";
+    let content = tweetTextEl ? extractFormattedText(tweetTextEl) : "";
+
+    const cardContent = extractXCardContent(article);
+    const quoteContent = extractXQuoteContent(article, tweetTextEl);
+
+    if (cardContent) {
+      content = content ? `${content}\n\n${cardContent}` : cardContent;
+    } else if (quoteContent) {
+      content = content ? `${content}\n\n${quoteContent}` : quoteContent;
+    }
+
     const url = statusLink ? new URL(statusLink.getAttribute("href"), location.origin).href : location.href;
     const stats = extractXStats(article);
 
@@ -647,7 +742,7 @@
       url,
       author: author.name,
       authorUrl: author.url,
-      publishedAt: timeNode?.getAttribute("datetime") || cleanText(timeNode?.textContent || ""),
+      publishedAt: timeNode?.getAttribute("datetime") || cleanFormattedText(timeNode?.textContent || ""),
       sourceClient: "",
       content,
       images: extractXImages(article),
