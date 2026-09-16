@@ -295,7 +295,29 @@ async function getObsidianConfig() {
   const core = getObsidianCore();
   const storageKey = core?.STORAGE_KEYS?.obsidianConfig || "obsidianConfig";
   const stored = await chrome.storage.local.get(storageKey);
-  return core ? core.mergeConfig(stored[storageKey]) : (stored[storageKey] || {});
+  let config = stored[storageKey] || {};
+
+  // Auto-migrate legacy templates (e.g. ones with '# {{title}}' or '## 来源信息', or legacy fileNameTemplate)
+  if (
+    config.noteTemplate &&
+    (config.noteTemplate.includes("# {{title}}") ||
+      config.noteTemplate.includes("## 来源信息") ||
+      config.fileNameTemplate === "{{pathSafeAuthor}}-{{id}}" ||
+      !config.templateVersion ||
+      config.templateVersion < 2)
+  ) {
+    config = {
+      ...config,
+      fileNameTemplate: core ? core.DEFAULT_CONFIG.fileNameTemplate : "{{pathSafeTitle}}",
+      noteTemplate: core ? core.DEFAULT_CONFIG.noteTemplate : "",
+      templateVersion: 2
+    };
+    try {
+      await chrome.storage.local.set({ [storageKey]: config });
+    } catch (_) {}
+  }
+
+  return core ? core.mergeConfig(config) : config;
 }
 
 async function queryHandlePermission(handle) {

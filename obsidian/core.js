@@ -28,16 +28,7 @@
     "{{content}}",
     "",
     "{{imagesMarkdown}}",
-    "{{videosMarkdown}}",
-    "",
-    "## 来源信息",
-    "",
-    "- 平台: {{sourceName}}",
-    "- 作者: {{author}}",
-    "- 作者主页: {{authorUrl}}",
-    "- 发布时间: {{publishedAt}}",
-    "- 原文链接: {{url}}",
-    "- 话题: {{topicsCsv}}"
+    "{{videosMarkdown}}"
   ].join("\n");
 
   const DEFAULT_CONFIG = {
@@ -48,7 +39,8 @@
     fileNameTemplate: "{{pathSafeTitle}}",
     noteTemplate: DEFAULT_NOTE_TEMPLATE,
     overwriteExisting: false,
-    downloadImages: true
+    downloadImages: true,
+    templateVersion: 2
   };
 
   const TEMPLATE_TOKENS = [

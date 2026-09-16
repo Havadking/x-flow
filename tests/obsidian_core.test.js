@@ -10,6 +10,7 @@ test("mergeConfig should supply defaults", () => {
   assert.strictEqual(merged.fileNameTemplate, "{{pathSafeTitle}}");
   assert.strictEqual(merged.downloadImages, true);
   assert.strictEqual(merged.overwriteExisting, false);
+  assert.strictEqual(merged.templateVersion, 2);
 });
 
 test("sanitizeFileName and sanitizePathSegment should clean unsafe characters", () => {
@@ -45,7 +46,7 @@ test("renderTemplate replaces context variables accurately", () => {
   assert.strictEqual(out, "Hello Alice, your id is 12345 and likes: 42, AI: 极简总结");
 });
 
-test("createNote generates note without # title and with images above source info", () => {
+test("createNote generates clean note with AI title as filename and only original content in body", () => {
   const post = {
     source: "x",
     id: "1890000000000000000",
@@ -53,11 +54,11 @@ test("createNote generates note without # title and with images above source inf
     author: "Wall St Engine",
     authorUrl: "https://x.com/wallstengine",
     publishedAt: "2026-09-16T15:57:30.000Z",
-    aiSummary: "NFG拟50亿美元出售天然气业务",
-    content: "National Fuel Gas $NFG is exploring strategic options...",
+    aiSummary: "美联储上调增长通胀预期",
+    content: "THE FED JUST RAISED ITS 2026 GROWTH AND INFLATION FORECASTS\n\nGDP: 2.3% from 2.2%",
     images: ["https://pbs.twimg.com/media/test.jpg?name=large"],
     videos: [],
-    topics: ["NFG"],
+    topics: ["FED"],
     repostsCount: 1200,
     commentsCount: 300,
     likesCount: 5000,
@@ -66,25 +67,24 @@ test("createNote generates note without # title and with images above source inf
   const note = core.createNote(post, core.DEFAULT_CONFIG);
 
   assert.match(note.relativePath, /^Clippings\/X\/\d{4}\/\d{2}$/);
-  // File name format: {author} - {aiSummary}
-  assert.strictEqual(note.fileName, "Wall St Engine - NFG拟50亿美元出售天然气业务");
 
-  // Body must NOT start with '# ' title
+  // File name format is directly the title: {author} - {aiSummary}
+  assert.strictEqual(note.fileName, "Wall St Engine - 美联储上调增长通胀预期");
+
+  // Body must NOT have '# ' title or '## 来源信息'
   assert.strictEqual(note.markdown.includes("# Wall St Engine"), false);
   assert.strictEqual(note.markdown.includes("# {{title}}"), false);
+  assert.strictEqual(note.markdown.includes("## 来源信息"), false);
 
-  // Frontmatter exists
+  // Frontmatter exists with Beijing time
   assert.match(note.markdown, /^---[\s\S]+---/);
+  assert.match(note.markdown, /published at: "2026-09-16 23:57:30"/);
 
-  // PublishedAt is formatted as Beijing Time in source info
-  assert.match(note.markdown, /- 发布时间: 2026-09-16 23:57:30/);
-
-  // Images must appear BEFORE '## 来源信息'
-  const imageIndex = note.markdown.indexOf("https://pbs.twimg.com/media/test.jpg");
-  const sourceInfoIndex = note.markdown.indexOf("## 来源信息");
-  assert.ok(imageIndex > 0, "Image link should exist in markdown");
-  assert.ok(sourceInfoIndex > 0, "Source info header should exist");
-  assert.ok(imageIndex < sourceInfoIndex, "Image must appear BEFORE ## 来源信息");
+  // Body contains ONLY the original content followed immediately by the image
+  const contentIndex = note.markdown.indexOf("THE FED JUST RAISED ITS 2026 GROWTH");
+  const imageBodyIndex = note.markdown.lastIndexOf("https://pbs.twimg.com/media/test.jpg");
+  assert.ok(contentIndex > 0, "Original content must be in body");
+  assert.ok(imageBodyIndex > contentIndex, "Image must follow immediately after original content in body");
 });
 
 test("createAttachmentDirectoryPath formats attachment path template", () => {

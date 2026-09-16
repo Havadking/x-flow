@@ -249,7 +249,18 @@
     els.fileNameTemplate.value = obsConfig.fileNameTemplate || "{{pathSafeTitle}}";
     els.downloadImages.checked = obsConfig.downloadImages !== false;
     els.overwriteExisting.checked = Boolean(obsConfig.overwriteExisting);
-    els.noteTemplate.value = obsConfig.noteTemplate || core.DEFAULT_CONFIG.noteTemplate;
+
+    let noteTemplate = obsConfig.noteTemplate;
+    if (
+      !noteTemplate ||
+      noteTemplate.includes("# {{title}}") ||
+      noteTemplate.includes("## 来源信息") ||
+      !obsConfig.templateVersion ||
+      obsConfig.templateVersion < 2
+    ) {
+      noteTemplate = core.DEFAULT_CONFIG.noteTemplate;
+    }
+    els.noteTemplate.value = noteTemplate;
 
     await refreshVaultStatus();
   }
@@ -267,6 +278,7 @@
       downloadImages: els.downloadImages.checked,
       overwriteExisting: els.overwriteExisting.checked,
       noteTemplate: els.noteTemplate.value,
+      templateVersion: 2,
     };
 
     const generalSettings = {
