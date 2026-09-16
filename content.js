@@ -1,6 +1,6 @@
-// Adds two icon buttons to each tweet's top-right corner (next to the "…"
+// Adds three icon buttons to each tweet's top-right corner (next to the "…"
 // menu), styled like X's own action buttons. Translation renders inline
-// under the tweet text; the explanation opens in a small popup.
+// under the tweet text; explanation opens in a small popup; clip saves to Obsidian.
 
 (() => {
   const DEFAULTS = {
@@ -8,13 +8,15 @@
     targetLang: "简体中文",
     showTranslate: true,
     showExplain: true,
+    showClip: true,
   };
 
-  const MODES = ["translate", "explain"];
+  const MODES = ["translate", "explain", "clip"];
 
   const LABELS = {
     translate: { idle: "DeepSeek 翻译", caption: "DeepSeek 翻译", fail: "翻译失败" },
     explain: { idle: "DeepSeek 解释", caption: "DeepSeek 解释", fail: "解释失败" },
+    clip: { idle: "存入 Obsidian", caption: "存入 Obsidian", fail: "保存失败", saved: "已存入 Obsidian" },
   };
 
   const ICONS = {
@@ -31,6 +33,12 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/>' +
       '<path d="m19 3-.8 2.2a1 1 0 0 1-.6.6L15.4 6.6l2.2.8a1 1 0 0 1 .6.6l.8 2.2.8-2.2a1 1 0 0 1 .6-.6l2.2-.8-2.2-.8a1 1 0 0 1-.6-.6z"/>' +
+      '</svg>',
+    clip:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M6 3h12l4 6-10 13L2 9z"/>' +
+      '<path d="M11 3 8 9l4 13 4-13-3-6"/>' +
+      '<path d="M2 9h20"/>' +
       '</svg>',
   };
 
@@ -389,6 +397,33 @@
         padding: 8px 0;
       }
       .ds-error { color: rgb(244, 33, 46); }
+
+      #ds-toast {
+        position: fixed;
+        bottom: 32px;
+        left: 50%;
+        transform: translateX(-50%) translateY(20px);
+        background: rgba(15, 20, 25, 0.92);
+        color: #fff;
+        padding: 9px 18px;
+        border-radius: 9999px;
+        font-size: 13px;
+        font-weight: 500;
+        pointer-events: none;
+        opacity: 0;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        z-index: 2147483647;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      }
+      #ds-toast.ds-toast-visible {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
     `;
     document.head.appendChild(style);
   }
@@ -420,6 +455,227 @@
     const idx = all.indexOf(tweetTextEl);
     const quoted = idx >= 0 ? all[idx + 1] : null;
     return quoted ? extractText(quoted) : "";
+  }
+
+  // -------------------------------------------------------- Obsidian & X extract
+
+  function cleanText(text) {
+    return String(text || "")
+      .replace(/\u00A0/g, " ")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function isLikelyXProfileLink(href) {
+    if (!href || !href.startsWith("/")) return false;
+    const segments = href.split("/").filter(Boolean);
+    if (segments.length !== 1) return false;
+    const reserved = new Set([
+      "home", "explore", "notifications", "messages", "i", "search",
+      "settings", "compose", "login", "signup", "tos", "privacy"
+    ]);
+    return !reserved.has(segments[0].toLowerCase());
+  }
+
+  function isXMetaText(text) {
+    return /^(@|·|•)/.test(text) || /^[0-9]+[smhdw]$/.test(text.toLowerCase());
+  }
+
+  function extractXStatusLink(root) {
+    const link = root.querySelector('a[href*="/status/"] time');
+    if (link?.parentElement instanceof HTMLAnchorElement) {
+      return link.parentElement;
+    }
+    return root.querySelector('a[href*="/status/"]');
+  }
+
+  function extractXAuthor(root) {
+    const container = root.querySelector('[data-testid="User-Name"]');
+    if (!container) return { name: "", url: "" };
+    const profileLink = Array.from(container.querySelectorAll('a[href^="/"]')).find((link) =>
+      isLikelyXProfileLink(link.getAttribute("href") || "")
+    );
+    const displayName =
+      Array.from(container.querySelectorAll("span"))
+        .map((node) => cleanText(node.textContent || ""))
+        .find((text) => text && !text.startsWith("@") && !isXMetaText(text)) || "";
+    return {
+      name: displayName || (profileLink ? profileLink.pathname.split("/").filter(Boolean)[0] || "" : ""),
+      url: profileLink ? new URL(profileLink.getAttribute("href"), location.origin).href : ""
+    };
+  }
+
+  function extractPostId(root, url) {
+    const attrCandidates = ["mid", "omid", "data-mid", "id"];
+    for (const attrName of attrCandidates) {
+      const raw = root.getAttribute(attrName);
+      if (raw && raw.trim()) return raw.trim();
+    }
+    try {
+      const parsed = new URL(url);
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      const statusIdx = segments.indexOf("status");
+      if (statusIdx >= 0 && segments[statusIdx + 1]) {
+        return segments[statusIdx + 1];
+      }
+      return segments[segments.length - 1] || `${Date.now()}`;
+    } catch (_) {
+      return `${Date.now()}`;
+    }
+  }
+
+  function normalizeAssetUrl(url) {
+    if (!url) return "";
+    if (url.startsWith("//")) return `${location.protocol}${url}`;
+    try {
+      return new URL(url, location.origin).href;
+    } catch (_) {
+      return url;
+    }
+  }
+
+  function normalizeXAssetUrl(url) {
+    const normalizedUrl = normalizeAssetUrl(url);
+    if (!normalizedUrl) return "";
+    try {
+      const parsed = new URL(normalizedUrl);
+      if (parsed.hostname === "pbs.twimg.com") {
+        parsed.searchParams.set("name", "large");
+      }
+      return parsed.href;
+    } catch (_) {
+      return normalizedUrl;
+    }
+  }
+
+  function extractImageUrl(img) {
+    const srcset = img.getAttribute("srcset") || img.getAttribute("data-srcset") || "";
+    const srcsetUrl = srcset
+      .split(",")
+      .map((item) => item.trim().split(/\s+/)[0])
+      .filter(Boolean)
+      .pop();
+    return img.currentSrc || img.getAttribute("data-src") || img.getAttribute("src") || srcsetUrl || "";
+  }
+
+  function extractXImages(root) {
+    const urls = new Set();
+    const selectors = [
+      'img[src*="pbs.twimg.com/media"]',
+      'img[src*="pbs.twimg.com/ext_tw_video_thumb"]',
+      'img[src*="pbs.twimg.com/amplify_video_thumb"]'
+    ];
+    root.querySelectorAll(selectors.join(", ")).forEach((img) => {
+      const src = extractImageUrl(img);
+      if (src) urls.add(normalizeXAssetUrl(src));
+    });
+    return Array.from(urls);
+  }
+
+  function extractXVideos(root) {
+    const urls = new Set();
+    root.querySelectorAll("video[src], video source[src]").forEach((node) => {
+      const src = node.getAttribute("src");
+      if (src && !src.startsWith("blob:")) {
+        urls.add(normalizeAssetUrl(src));
+      }
+    });
+    return Array.from(urls);
+  }
+
+  function extractTopics(content) {
+    const matches = String(content || "").match(/#([^#\n\s]+)/g);
+    if (!matches) return [];
+    return Array.from(new Set(matches.map((item) => item.replace(/^#/, "").trim()).filter(Boolean)));
+  }
+
+  function normalizeNumber(value) {
+    if (typeof value === "number" && !Number.isNaN(value)) return value;
+    const text = String(value || "").trim().replace(/,/g, "");
+    if (!text) return 0;
+    const wanMatch = text.match(/^([\d.]+)\s*万$/i);
+    if (wanMatch) return Math.round(parseFloat(wanMatch[1]) * 10000);
+    const yiMatch = text.match(/^([\d.]+)\s*亿$/i);
+    if (yiMatch) return Math.round(parseFloat(yiMatch[1]) * 100000000);
+    const kMatch = text.match(/^([\d.]+)\s*k$/i);
+    if (kMatch) return Math.round(parseFloat(kMatch[1]) * 1000);
+    const mMatch = text.match(/^([\d.]+)\s*m$/i);
+    if (mMatch) return Math.round(parseFloat(mMatch[1]) * 1000000);
+    const parsed = parseFloat(text);
+    return Number.isNaN(parsed) ? 0 : Math.round(parsed);
+  }
+
+  function readXStat(root, testIds) {
+    for (const testId of testIds) {
+      const node = root.querySelector(`[data-testid="${testId}"]`);
+      if (!node) continue;
+      const candidates = [
+        node.getAttribute("aria-label"),
+        node.getAttribute("title"),
+        node.textContent
+      ];
+      for (const value of candidates) {
+        const num = normalizeNumber(value);
+        if (num > 0) return num;
+      }
+    }
+    return 0;
+  }
+
+  function extractXStats(root) {
+    return {
+      commentsCount: readXStat(root, ["reply"]),
+      repostsCount: readXStat(root, ["retweet", "unretweet"]),
+      likesCount: readXStat(root, ["like", "unlike"])
+    };
+  }
+
+  function extractXPostData(article) {
+    const statusLink = extractXStatusLink(article);
+    const timeNode = statusLink?.querySelector("time");
+    const author = extractXAuthor(article);
+    const tweetTextEl = getMainTweetText(article);
+    const content = tweetTextEl ? extractText(tweetTextEl) : "";
+    const url = statusLink ? new URL(statusLink.getAttribute("href"), location.origin).href : location.href;
+    const stats = extractXStats(article);
+
+    return {
+      source: "x",
+      id: extractPostId(article, url),
+      url,
+      author: author.name,
+      authorUrl: author.url,
+      publishedAt: timeNode?.getAttribute("datetime") || cleanText(timeNode?.textContent || ""),
+      sourceClient: "",
+      content,
+      images: extractXImages(article),
+      videos: extractXVideos(article),
+      topics: extractTopics(content),
+      repostsCount: stats.repostsCount,
+      commentsCount: stats.commentsCount,
+      likesCount: stats.likesCount
+    };
+  }
+
+  function showToast(message, duration = 2800) {
+    const existing = document.getElementById("ds-toast");
+    if (existing) existing.remove();
+
+    const toast = document.createElement("div");
+    toast.id = "ds-toast";
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add("ds-toast-visible");
+    }, 10);
+
+    setTimeout(() => {
+      toast.classList.remove("ds-toast-visible");
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
   }
 
   // ------------------------------------------------------------ auto expand
@@ -826,6 +1082,84 @@
       }
     }
 
+    if (mode === "clip") {
+      if (btn.dataset.busy === "1") return;
+      setBusy(btn, true);
+
+      try {
+        let tweetTextEl = getMainTweetText(article);
+        if (tweetTextEl) {
+          const expanded = await ensureExpanded(tweetTextEl);
+          if (expanded && expanded !== tweetTextEl) {
+            tweetTextEl = expanded;
+            article = tweetTextEl.closest("article") || article;
+            scan();
+            const freshBtn = findButton(article, mode);
+            if (freshBtn) {
+              btn = freshBtn;
+              setBusy(btn, true);
+            }
+          }
+        }
+
+        const post = extractXPostData(article);
+        const response = await chrome.runtime.sendMessage({
+          type: "OBSIDIAN_SAVE",
+          post,
+        });
+
+        if (response?.ok) {
+          setBusy(btn, false);
+          btn.innerHTML = UI_ICONS.check;
+          btn.style.color = "rgb(0, 186, 124)";
+          btn.dataset.tooltip = LABELS.clip.saved;
+          showToast("已成功存入 Obsidian 知识库！");
+          setTimeout(() => {
+            if (btn.isConnected) {
+              btn.innerHTML = ICONS.clip;
+              btn.style.color = "";
+              btn.dataset.tooltip = LABELS.clip.idle;
+            }
+          }, 2500);
+        } else {
+          setBusy(btn, false);
+          btn.innerHTML = UI_ICONS.close;
+          btn.style.color = "rgb(244, 33, 46)";
+          const errMsg = response?.error || "保存失败";
+          btn.dataset.tooltip = errMsg;
+
+          if (response?.code === "vault_not_configured" || (response?.error && response.error.includes("vault"))) {
+            showToast("未配置 Obsidian Vault，正在打开设置页…", 3000);
+            chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+          } else {
+            showToast(`存入 Obsidian 失败：${errMsg}`, 4000);
+          }
+
+          setTimeout(() => {
+            if (btn.isConnected) {
+              btn.innerHTML = ICONS.clip;
+              btn.style.color = "";
+              btn.dataset.tooltip = LABELS.clip.idle;
+            }
+          }, 3000);
+        }
+      } catch (err) {
+        setBusy(btn, false);
+        btn.innerHTML = UI_ICONS.close;
+        btn.style.color = "rgb(244, 33, 46)";
+        btn.dataset.tooltip = String(err?.message || err);
+        showToast(`保存出错：${err?.message || err}`, 4000);
+        setTimeout(() => {
+          if (btn.isConnected) {
+            btn.innerHTML = ICONS.clip;
+            btn.style.color = "";
+            btn.dataset.tooltip = LABELS.clip.idle;
+          }
+        }, 3000);
+      }
+      return;
+    }
+
     setBusy(btn, true);
 
     let tweetTextEl = getMainTweetText(article);
@@ -955,10 +1289,11 @@
     btn.setAttribute("tabindex", "0");
     btn.setAttribute("aria-label", LABELS[mode].idle);
     btn.innerHTML = ICONS[mode];
-    btn.style.display =
-      (mode === "translate" ? settings.showTranslate : settings.showExplain) === false
-        ? "none"
-        : "";
+    let visible = true;
+    if (mode === "translate") visible = settings.showTranslate !== false;
+    else if (mode === "explain") visible = settings.showExplain !== false;
+    else if (mode === "clip") visible = settings.showClip !== false;
+    btn.style.display = visible ? "" : "none";
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -981,8 +1316,11 @@
       group.style.display = settings.enabled ? "" : "none";
     });
     document.querySelectorAll(".ds-btn[data-deepseek-btn]").forEach((btn) => {
-      const on =
-        btn.dataset.deepseekBtn === "translate" ? settings.showTranslate : settings.showExplain;
+      const mode = btn.dataset.deepseekBtn;
+      let on = true;
+      if (mode === "translate") on = settings.showTranslate;
+      else if (mode === "explain") on = settings.showExplain;
+      else if (mode === "clip") on = settings.showClip;
       btn.style.display = on === false ? "none" : "";
     });
   }
