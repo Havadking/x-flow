@@ -139,8 +139,17 @@
       els.vaultName.textContent = handle?.name || "未配置";
 
       if (!handle) {
-        els.vaultPermission.textContent = "未授权";
-        els.vaultPermission.className = "perm-badge warning";
+        const obsidianKey = core.STORAGE_KEYS.obsidianConfig;
+        const stored = await chrome.storage.local.get(obsidianKey);
+        const savedName = stored[obsidianKey]?.vaultName;
+        if (savedName) {
+          els.vaultName.textContent = savedName;
+          els.vaultPermission.textContent = "已就绪";
+          els.vaultPermission.className = "perm-badge granted";
+        } else {
+          els.vaultPermission.textContent = "未授权";
+          els.vaultPermission.className = "perm-badge warning";
+        }
         return;
       }
 
@@ -176,6 +185,13 @@
       }
 
       await db.saveVaultHandle(handle);
+      try {
+        const obsidianKey = core.STORAGE_KEYS.obsidianConfig;
+        const stored = await chrome.storage.local.get(obsidianKey);
+        const curConfig = core.mergeConfig(stored[obsidianKey]);
+        curConfig.vaultName = handle.name;
+        await chrome.storage.local.set({ [obsidianKey]: curConfig });
+      } catch (_) {}
       await refreshVaultStatus();
       setStatus(`已成功关联 Obsidian Vault：${handle.name}`, "ok");
     } catch (error) {
@@ -268,8 +284,11 @@
   async function saveSettings() {
     const obsidianKey = core.STORAGE_KEYS.obsidianConfig;
     const saveMethod = els.saveMethodUri.checked ? "obsidian-uri" : "filesystem";
+    const stored = await chrome.storage.local.get(obsidianKey);
+    const prevObsConfig = stored[obsidianKey] || {};
 
     const obsidianConfig = {
+      ...prevObsConfig,
       saveMethod,
       obsidianVault: els.obsidianVault.value.trim(),
       relativePathTemplate: els.relativePathTemplate.value.trim() || "Clippings/X/{{yyyy}}/{{mm}}",

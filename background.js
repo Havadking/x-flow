@@ -334,13 +334,34 @@ async function queryHandlePermission(handle) {
 async function getObsidianStatus() {
   const config = await getObsidianConfig();
   const db = getObsidianDb();
-  const handle = db ? await db.getVaultHandle() : null;
+  let handle = null;
+  try {
+    handle = db ? await db.getVaultHandle() : null;
+  } catch (_) {}
   const permissionState = handle ? await queryHandlePermission(handle) : "missing";
+
+  const isUri = config.saveMethod === "obsidian-uri";
+  const vaultName = isUri
+    ? (config.obsidianVault || "").trim()
+    : (handle?.name || config.vaultName || "").trim();
+
+  const configured = isUri
+    ? Boolean(vaultName)
+    : Boolean(handle || config.vaultName);
+
+  if (handle?.name && !config.vaultName) {
+    try {
+      const core = getObsidianCore();
+      const storageKey = core?.STORAGE_KEYS?.obsidianConfig || "obsidianConfig";
+      await chrome.storage.local.set({ [storageKey]: { ...config, vaultName: handle.name } });
+    } catch (_) {}
+  }
 
   return {
     ok: true,
+    configured,
     config,
-    vaultName: handle?.name || "",
+    vaultName,
     permissionState
   };
 }
@@ -617,6 +638,13 @@ async function saveObsidianPost(rawPost) {
       code: "VAULT_NOT_READY",
       error: "还没有选择本地 Obsidian 库，请点击插件图标进入设置授权。"
     };
+  }
+
+  if (vaultHandle.name && !config.vaultName) {
+    try {
+      const storageKey = core.STORAGE_KEYS.obsidianConfig;
+      await chrome.storage.local.set({ [storageKey]: { ...config, vaultName: vaultHandle.name } });
+    } catch (_) {}
   }
 
   const permissionState = await queryHandlePermission(vaultHandle);

@@ -1,8 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "X-Flow - X 智流推特 (AI 智译与 Obsidian 剪藏)",
+  "name": "X-Flow",
   "version": "1.1.0",
   "description": "为 X (Twitter) 赋予 DeepSeek 实时流式翻译、AI 深度解读与一键存入本地 Obsidian 知识库的能力。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "permissions": ["storage"],
   "host_permissions": [
     "https://api.deepseek.com/*",
@@ -21,7 +27,13 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "options_page": "options.html"
 }

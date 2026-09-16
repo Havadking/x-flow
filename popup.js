@@ -10,7 +10,7 @@ const els = {
 };
 
 async function load() {
-  const s = await chrome.storage.local.get(["enabled", "apiKey"]);
+  const s = await chrome.storage.local.get(["enabled", "apiKey", "obsidianConfig"]);
   els.enabled.checked = s.enabled !== false;
 
   if (s.apiKey) {
@@ -21,15 +21,56 @@ async function load() {
     els.textApi.textContent = "未配置 DeepSeek Key";
   }
 
-  chrome.runtime.sendMessage({ type: "GET_OBSIDIAN_STATUS" }, (resp) => {
-    if (resp?.configured) {
-      els.dotObs.className = "status-dot ok";
-      els.textObs.textContent = `Obsidian: ${resp.vaultName || "已连接"}`;
-    } else {
+  // Fast check from local storage
+  const obsConfig = s.obsidianConfig || {};
+  const isUri = obsConfig.saveMethod === "obsidian-uri";
+  const knownName = isUri
+    ? (obsConfig.obsidianVault || "").trim()
+    : (obsConfig.vaultName || "").trim();
+
+  if (knownName) {
+    els.dotObs.className = "status-dot ok";
+    els.textObs.textContent = `Obsidian: ${knownName}`;
+  }
+
+  // Query background service worker for live status
+  try {
+    chrome.runtime.sendMessage({ type: "GET_OBSIDIAN_STATUS" }, (resp) => {
+      if (chrome.runtime.lastError) {
+        if (!knownName) {
+          els.dotObs.className = "status-dot warn";
+          els.textObs.textContent = "未配置 Obsidian Vault";
+        }
+        return;
+      }
+
+      const isConfigured = Boolean(
+        resp?.configured ||
+        resp?.vaultName ||
+        (resp?.config?.saveMethod === "obsidian-uri" && resp?.config?.obsidianVault) ||
+        resp?.config?.vaultName
+      );
+
+      if (isConfigured) {
+        els.dotObs.className = "status-dot ok";
+        const name =
+          resp?.vaultName ||
+          resp?.config?.obsidianVault ||
+          resp?.config?.vaultName ||
+          knownName ||
+          "已连接";
+        els.textObs.textContent = `Obsidian: ${name}`;
+      } else {
+        els.dotObs.className = "status-dot warn";
+        els.textObs.textContent = "未配置 Obsidian Vault";
+      }
+    });
+  } catch (_) {
+    if (!knownName) {
       els.dotObs.className = "status-dot warn";
       els.textObs.textContent = "未配置 Obsidian Vault";
     }
-  });
+  }
 }
 
 els.enabled.addEventListener("change", () => {
