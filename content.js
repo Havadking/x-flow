@@ -13,15 +13,36 @@
   const MODES = ["translate", "explain"];
 
   const LABELS = {
-    translate: { idle: "DeepSeek 翻译", caption: "已使用 DeepSeek 翻译", fail: "翻译失败" },
+    translate: { idle: "DeepSeek 翻译", caption: "DeepSeek 翻译", fail: "翻译失败" },
     explain: { idle: "DeepSeek 解释", caption: "DeepSeek 解释", fail: "解释失败" },
   };
 
   const ICONS = {
     translate:
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"></path></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="m5 8 6 6"/>' +
+      '<path d="m4 14 6-6 2-3"/>' +
+      '<path d="M2 5h12"/>' +
+      '<path d="M7 2h1"/>' +
+      '<path d="m22 22-5-10-5 10"/>' +
+      '<path d="M14 18h6"/>' +
+      '</svg>',
     explain:
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"></path></svg>',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/>' +
+      '<path d="m19 3-.8 2.2a1 1 0 0 1-.6.6L15.4 6.6l2.2.8a1 1 0 0 1 .6.6l.8 2.2.8-2.2a1 1 0 0 1 .6-.6l2.2-.8-2.2-.8a1 1 0 0 1-.6-.6z"/>' +
+      '</svg>',
+  };
+
+  const UI_ICONS = {
+    sparkle:
+      '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="width:13px;height:13px;flex-shrink:0;"><path d="M12 2.25c.34 0 .66.21.79.53l2.25 5.56 5.56 2.25c.32.13.53.45.53.79s-.21.66-.53.79l-5.56 2.25-2.25 5.56a.86.86 0 0 1-1.58 0l-2.25-5.56-5.56-2.25a.86.86 0 0 1 0-1.58l5.56-2.25 2.25-5.56c.13-.32.45-.53.79-.53zm-6.75 12c.26 0 .5.16.6.4l1 2.5 2.5 1c.24.1.4.34.4.6s-.16.5-.4.6l-2.5 1-1 2.5a.65.65 0 0 1-1.2 0l-1-2.5-2.5-1a.65.65 0 0 1 0-1.2l2.5-1 1-2.5c.1-.24.34-.4.6-.4z"/></svg>',
+    copy:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
+    check:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><polyline points="20 6 9 17 4 12"/></svg>',
+    close:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
   };
 
   const SHOW_MORE_TEXTS = new Set([
@@ -89,17 +110,33 @@
     const a = detectAccent();
     const root = document.documentElement;
     root.style.setProperty("--ds-accent", `rgb(${a.r}, ${a.g}, ${a.b})`);
+    root.style.setProperty("--ds-accent-rgb", `${a.r}, ${a.g}, ${a.b}`);
     root.style.setProperty("--ds-accent-bg", `rgba(${a.r}, ${a.g}, ${a.b}, 0.1)`);
+    root.style.setProperty("--ds-accent-hover", `rgba(${a.r}, ${a.g}, ${a.b}, 0.15)`);
+
     const dark = isDarkBackground();
     root.style.setProperty(
+      "--ds-card-bg",
+      dark ? "rgba(255, 255, 255, 0.035)" : "rgba(0, 0, 0, 0.02)"
+    );
+    root.style.setProperty(
+      "--ds-card-border",
+      dark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.06)"
+    );
+    root.style.setProperty(
       "--ds-popup-bg",
-      getComputedStyle(document.body).backgroundColor || (dark ? "#000" : "#fff")
+      dark ? "rgba(0, 0, 0, 0.85)" : "rgba(255, 255, 255, 0.92)"
     );
     root.style.setProperty("--ds-popup-fg", dark ? "rgb(231,233,234)" : "rgb(15,20,25)");
     root.style.setProperty(
       "--ds-popup-border",
-      dark ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.1)"
+      dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)"
     );
+    root.style.setProperty(
+      "--ds-text-primary",
+      dark ? "rgb(231,233,234)" : "rgb(15,20,25)"
+    );
+    root.style.setProperty("--ds-text-muted", "rgb(113, 118, 123)");
   }
 
   function injectStyles() {
@@ -107,48 +144,251 @@
     const style = document.createElement("style");
     style.id = "ds-styles";
     style.textContent = `
-      .ds-group { display:inline-flex; align-items:center; gap:2px; }
+      .ds-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-right: 2px;
+        vertical-align: middle;
+      }
       .ds-btn {
-        display:inline-flex; align-items:center; justify-content:center;
-        width:30px; height:30px; border-radius:9999px;
-        color:rgb(113,118,123); cursor:pointer;
-        transition:background-color .2s ease, color .2s ease;
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 9999px;
+        color: rgb(113, 118, 123);
+        cursor: pointer;
+        transition: background-color .15s ease, color .15s ease, transform .1s ease;
+        user-select: none;
+        box-sizing: border-box;
       }
-      .ds-btn:hover { background-color:var(--ds-accent-bg); color:var(--ds-accent); }
-      .ds-btn[data-active="1"] { color:var(--ds-accent); }
-      .ds-btn[data-busy="1"] { pointer-events:none; }
-      .ds-btn svg { width:18px; height:18px; fill:currentColor; }
+      .ds-btn:hover {
+        background-color: var(--ds-accent-bg);
+        color: var(--ds-accent);
+      }
+      .ds-btn:active {
+        transform: scale(0.92);
+      }
+      .ds-btn[data-active="1"] {
+        color: var(--ds-accent);
+        background-color: var(--ds-accent-bg);
+      }
+      .ds-btn[data-busy="1"] {
+        pointer-events: none;
+      }
+      .ds-btn svg {
+        width: 19px;
+        height: 19px;
+      }
       .ds-spinner {
-        width:16px; height:16px; border:2px solid currentColor;
-        border-right-color:transparent; border-radius:50%;
-        animation:ds-spin .8s linear infinite;
+        width: 16px;
+        height: 16px;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: ds-spin .75s linear infinite;
       }
-      @keyframes ds-spin { to { transform:rotate(360deg); } }
+      @keyframes ds-spin { to { transform: rotate(360deg); } }
+
+      .ds-btn::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: -28px;
+        left: 50%;
+        transform: translateX(-50%) scale(0.92);
+        background: rgba(15, 20, 25, 0.88);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 500;
+        padding: 3px 8px;
+        border-radius: 4px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity .15s ease, transform .15s ease;
+        z-index: 99999;
+        backdrop-filter: blur(4px);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      }
+      .ds-btn:hover::after {
+        opacity: 1;
+        transform: translateX(-50%) scale(1);
+        transition-delay: .35s;
+      }
+
+      .ds-trans-card {
+        margin-top: 8px;
+        margin-bottom: 6px;
+        padding: 10px 14px 12px;
+        background: var(--ds-card-bg);
+        border: 1px solid var(--ds-card-border);
+        border-left: 3px solid var(--ds-accent);
+        border-radius: 6px 12px 12px 6px;
+        font-family: inherit;
+        transition: opacity .2s ease;
+      }
+      .ds-trans-card.ds-error {
+        border-left-color: rgb(244, 33, 46);
+        background: rgba(244, 33, 46, 0.04);
+      }
+      .ds-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 7px;
+        user-select: none;
+      }
+      .ds-card-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .ds-brand-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--ds-accent);
+        letter-spacing: -0.01em;
+      }
+      .ds-card-header.ds-error-head .ds-brand-badge {
+        color: rgb(244, 33, 46);
+      }
+      .ds-lang-tag {
+        color: var(--ds-text-muted);
+        font-size: 12px;
+      }
+      .ds-card-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .ds-card-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 7px;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 9999px;
+        color: var(--ds-text-muted);
+        cursor: pointer;
+        font-size: 11px;
+        line-height: 14px;
+        transition: all .15s ease;
+      }
+      .ds-card-btn:hover {
+        background: var(--ds-accent-bg);
+        color: var(--ds-accent);
+      }
+      .ds-card-btn.ds-copied {
+        color: rgb(0, 186, 124);
+        background: rgba(0, 186, 124, 0.1);
+      }
+      .ds-card-body {
+        font-size: 15px;
+        line-height: 22px;
+        color: var(--ds-text-primary);
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .ds-card-body.ds-error-text {
+        color: rgb(244, 33, 46);
+      }
+      .ds-cursor {
+        display: inline-block;
+        width: 2px;
+        height: 14px;
+        background: var(--ds-accent);
+        margin-left: 2px;
+        vertical-align: -1px;
+        animation: ds-blink 0.75s infinite;
+      }
+      @keyframes ds-blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+      }
+      .ds-cursor.done { display: none !important; }
+
       .ds-popup {
-        position:fixed; z-index:2147483000; width:360px; max-width:calc(100vw - 24px);
-        background:var(--ds-popup-bg); color:var(--ds-popup-fg);
-        border:1px solid var(--ds-popup-border); border-radius:16px;
-        box-shadow:0 0 15px rgba(101,119,134,.2), 0 0 3px 1px rgba(101,119,134,.15);
-        font-size:14px; line-height:20px;
-        font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+        position: fixed;
+        z-index: 2147483000;
+        width: 370px;
+        max-width: calc(100vw - 24px);
+        background: var(--ds-popup-bg);
+        color: var(--ds-popup-fg);
+        border: 1px solid var(--ds-popup-border);
+        border-radius: 16px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22), 0 2px 8px rgba(0, 0, 0, 0.08);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        font-size: 14px;
+        line-height: 21px;
+        font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        overflow: hidden;
       }
       .ds-popup-head {
-        display:flex; align-items:center; justify-content:space-between;
-        padding:10px 12px 6px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px 8px 16px;
+        border-bottom: 1px solid var(--ds-card-border);
       }
-      .ds-popup-title { font-size:13px; font-weight:700; color:rgb(113,118,123); }
+      .ds-popup-title {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--ds-accent);
+      }
+      .ds-popup-head-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
       .ds-popup-close {
-        display:inline-flex; align-items:center; justify-content:center;
-        width:24px; height:24px; border-radius:9999px; cursor:pointer;
-        color:rgb(113,118,123);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 9999px;
+        cursor: pointer;
+        color: var(--ds-text-muted);
+        transition: background-color .15s ease, color .15s ease;
       }
-      .ds-popup-close:hover { background-color:var(--ds-accent-bg); color:var(--ds-accent); }
+      .ds-popup-close:hover {
+        background-color: var(--ds-accent-bg);
+        color: var(--ds-accent);
+      }
       .ds-popup-body {
-        padding:0 16px 14px; max-height:55vh; overflow-y:auto;
-        white-space:pre-wrap; word-wrap:break-word;
+        padding: 12px 16px 16px;
+        max-height: 55vh;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
       }
-      .ds-popup-loading { display:flex; align-items:center; gap:8px; color:rgb(113,118,123); }
-      .ds-error { color:rgb(244,33,46); }
+      .ds-popup-body::-webkit-scrollbar { width: 5px; }
+      .ds-popup-body::-webkit-scrollbar-thumb {
+        background: rgba(113, 118, 123, 0.25);
+        border-radius: 9999px;
+      }
+      .ds-popup-body::-webkit-scrollbar-thumb:hover {
+        background: rgba(113, 118, 123, 0.45);
+      }
+      .ds-popup-loading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--ds-text-muted);
+        padding: 8px 0;
+      }
+      .ds-error { color: rgb(244, 33, 46); }
     `;
     document.head.appendChild(style);
   }
@@ -274,18 +514,43 @@
 
     const head = document.createElement("div");
     head.className = "ds-popup-head";
+
     const title = document.createElement("div");
     title.className = "ds-popup-title";
-    title.textContent = LABELS.explain.caption;
+    title.innerHTML = `${UI_ICONS.sparkle} <span>${LABELS.explain.caption}</span>`;
+
+    const actions = document.createElement("div");
+    actions.className = "ds-popup-head-actions";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "ds-card-btn ds-copy-btn";
+    copyBtn.innerHTML = `${UI_ICONS.copy}<span>复制</span>`;
+    copyBtn.title = "复制解读";
+    copyBtn.addEventListener("click", () => {
+      if (!body) return;
+      navigator.clipboard.writeText(body.textContent).then(() => {
+        copyBtn.className = "ds-card-btn ds-copied";
+        copyBtn.innerHTML = `${UI_ICONS.check}<span>已复制</span>`;
+        setTimeout(() => {
+          if (copyBtn.isConnected) {
+            copyBtn.className = "ds-card-btn ds-copy-btn";
+            copyBtn.innerHTML = `${UI_ICONS.copy}<span>复制</span>`;
+          }
+        }, 1800);
+      });
+    });
+
     const close = document.createElement("div");
     close.className = "ds-popup-close";
     close.setAttribute("role", "button");
     close.setAttribute("aria-label", "关闭");
-    close.innerHTML =
-      '<svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor" aria-hidden="true"><path d="M10.59 12L4.54 5.96l1.42-1.42L12 10.59l6.04-6.05 1.42 1.42L13.41 12l6.05 6.04-1.42 1.42L12 13.41l-6.04 6.05-1.42-1.42L10.59 12z"></path></svg>';
+    close.innerHTML = UI_ICONS.close;
     close.addEventListener("click", closePopup);
+
+    actions.appendChild(copyBtn);
+    actions.appendChild(close);
     head.appendChild(title);
-    head.appendChild(close);
+    head.appendChild(actions);
 
     const body = document.createElement("div");
     body.className = "ds-popup-body";
@@ -312,7 +577,7 @@
     const spinner = document.createElement("div");
     spinner.className = "ds-spinner";
     const label = document.createElement("span");
-    label.textContent = "正在解释…";
+    label.textContent = "DeepSeek 正在深入分析推文…";
     wrap.appendChild(spinner);
     wrap.appendChild(label);
     popup.body.appendChild(wrap);
@@ -357,29 +622,84 @@
     const st = getState(article);
     if (st.block?.isConnected) st.block.remove();
 
-    const block = document.createElement("div");
-    block.setAttribute("data-deepseek-result", "1");
-    block.style.cssText = "margin-top:6px;";
-    block.addEventListener("click", (e) => e.stopPropagation());
+    const card = document.createElement("div");
+    card.className = `ds-trans-card ${isError ? "ds-error" : ""}`;
+    card.setAttribute("data-deepseek-result", "1");
+    card.addEventListener("click", (e) => e.stopPropagation());
 
-    const caption = document.createElement("div");
-    caption.textContent = isError
-      ? `DeepSeek ${LABELS.translate.fail}`
-      : LABELS.translate.caption;
-    caption.style.cssText =
-      "font-size:13px;line-height:16px;color:rgb(113,118,123);margin-bottom:2px;";
+    const header = document.createElement("div");
+    header.className = `ds-card-header ${isError ? "ds-error-head" : ""}`;
+
+    const meta = document.createElement("div");
+    meta.className = "ds-card-meta";
+
+    const badge = document.createElement("span");
+    badge.className = "ds-brand-badge";
+    badge.innerHTML = `${UI_ICONS.sparkle} <span>${isError ? "DeepSeek " + LABELS.translate.fail : "DeepSeek 翻译"}</span>`;
+    meta.appendChild(badge);
+
+    if (!isError) {
+      const langTag = document.createElement("span");
+      langTag.className = "ds-lang-tag";
+      langTag.textContent = `· ${settings.targetLang || "简体中文"}`;
+      meta.appendChild(langTag);
+    }
+    header.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "ds-card-actions";
+
+    if (!isError) {
+      const copyBtn = document.createElement("button");
+      copyBtn.className = "ds-card-btn ds-copy-btn";
+      copyBtn.innerHTML = `${UI_ICONS.copy}<span>复制</span>`;
+      copyBtn.title = "复制译文";
+      copyBtn.addEventListener("click", () => {
+        const textToCopy = bodyContent.textContent;
+        navigator.clipboard.writeText(textToCopy).then(() => {
+          copyBtn.className = "ds-card-btn ds-copied";
+          copyBtn.innerHTML = `${UI_ICONS.check}<span>已复制</span>`;
+          setTimeout(() => {
+            if (copyBtn.isConnected) {
+              copyBtn.className = "ds-card-btn ds-copy-btn";
+              copyBtn.innerHTML = `${UI_ICONS.copy}<span>复制</span>`;
+            }
+          }, 1800);
+        });
+      });
+      actions.appendChild(copyBtn);
+    }
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "ds-card-btn";
+    closeBtn.innerHTML = UI_ICONS.close;
+    closeBtn.title = "收起译文";
+    closeBtn.addEventListener("click", () => {
+      card.style.display = "none";
+      const btn = findButton(article, "translate");
+      if (btn?.isConnected) btn.dataset.active = "0";
+    });
+    actions.appendChild(closeBtn);
+    header.appendChild(actions);
 
     const body = document.createElement("div");
-    body.textContent = text;
-    body.style.cssText = `font-size:15px;line-height:20px;white-space:pre-wrap;word-wrap:break-word;color:${
-      isError ? "rgb(244,33,46)" : getComputedStyle(tweetTextEl).color
-    };`;
+    body.className = `ds-card-body ${isError ? "ds-error-text" : ""}`;
 
-    block.appendChild(caption);
-    block.appendChild(body);
-    tweetTextEl.insertAdjacentElement("afterend", block);
-    st.block = block;
-    return block;
+    const bodyContent = document.createElement("span");
+    bodyContent.className = "ds-content-text";
+    bodyContent.textContent = text;
+    body.appendChild(bodyContent);
+
+    const cursor = document.createElement("span");
+    cursor.className = `ds-cursor ${text && !isError ? "done" : ""}`;
+    body.appendChild(cursor);
+
+    card.appendChild(header);
+    card.appendChild(body);
+
+    tweetTextEl.insertAdjacentElement("afterend", card);
+    st.block = card;
+    return card;
   }
 
   // ----------------------------------------------------------------- buttons
@@ -588,10 +908,11 @@
     } else {
       let isFirstChunk = true;
       const block = renderInline(article, tweetTextEl, "", false);
-      const bodyEl = block?.querySelector("div:last-child");
-      if (bodyEl) {
-        bodyEl.textContent = "正在翻译…";
-        bodyEl.style.opacity = "0.7";
+      const textEl = block?.querySelector(".ds-content-text");
+      const cursor = block?.querySelector(".ds-cursor");
+      if (textEl) {
+        textEl.textContent = "DeepSeek 正在翻译推文…";
+        textEl.style.opacity = "0.6";
       }
 
       st.cancel = streamDeepSeek(payload, {
@@ -600,13 +921,13 @@
             isFirstChunk = false;
             setBusy(btn, false);
             if (btn?.isConnected) btn.dataset.active = "1";
-            if (bodyEl) {
-              bodyEl.textContent = "";
-              bodyEl.style.opacity = "1";
+            if (textEl) {
+              textEl.textContent = "";
+              textEl.style.opacity = "1";
             }
           }
-          if (bodyEl) {
-            bodyEl.textContent += delta;
+          if (textEl) {
+            textEl.textContent += delta;
           }
         },
         onDone(fullContent) {
@@ -614,6 +935,7 @@
           if (btn?.isConnected) btn.dataset.active = "1";
           st.cache.translate = fullContent;
           st.cancel = null;
+          if (cursor) cursor.classList.add("done");
         },
         onError(error) {
           setBusy(btn, false);
@@ -628,10 +950,10 @@
     const btn = document.createElement("div");
     btn.className = "ds-btn";
     btn.dataset.deepseekBtn = mode;
+    btn.dataset.tooltip = LABELS[mode].idle;
     btn.setAttribute("role", "button");
     btn.setAttribute("tabindex", "0");
     btn.setAttribute("aria-label", LABELS[mode].idle);
-    btn.title = LABELS[mode].idle;
     btn.innerHTML = ICONS[mode];
     btn.style.display =
       (mode === "translate" ? settings.showTranslate : settings.showExplain) === false
