@@ -35,8 +35,8 @@
   ]);
 
   let settings = { ...DEFAULTS };
-  const stateMap = new WeakMap(); // article -> { cache, block }
-  const popup = { el: null, body: null, anchor: null, article: null };
+  const stateMap = new WeakMap(); // article -> { cache, block, cancel }
+  const popup = { el: null, body: null, anchor: null, article: null, cancel: null };
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -233,6 +233,10 @@
   // ------------------------------------------------------------- popup (解释)
 
   function closePopup() {
+    if (popup.cancel) {
+      try { popup.cancel(); } catch (_) {}
+      popup.cancel = null;
+    }
     if (popup.el) popup.el.remove();
     if (popup.anchor?.isConnected) popup.anchor.dataset.active = "0";
     popup.el = null;
@@ -343,7 +347,7 @@
   function getState(article) {
     let st = stateMap.get(article);
     if (!st) {
-      st = { cache: {}, block: null };
+      st = { cache: {}, block: null, cancel: null };
       stateMap.set(article, st);
     }
     return st;
@@ -397,28 +401,85 @@
 
   // Never leaves the spinner running: a reloaded extension (context
   // invalidated) or a hung request both come back as an error object.
+  // Connects to background via chrome.runtime.connect for streaming SSE.
   const REQUEST_TIMEOUT_MS = 180000;
-  async function requestDeepSeek(payload) {
-    const timeout = new Promise((resolve) =>
-      setTimeout(() => resolve({ ok: false, error: "请求超时，DeepSeek 没有在 3 分钟内返回结果。" }), REQUEST_TIMEOUT_MS)
-    );
+  function streamDeepSeek(payload, { onChunk, onDone, onError }) {
+    let finished = false;
+    let port = null;
+
+    const timer = setTimeout(() => {
+      if (finished) return;
+      finished = true;
+      try { port?.disconnect(); } catch (_) {}
+      onError("请求超时，DeepSeek 没有在 3 分钟内返回结果。");
+    }, REQUEST_TIMEOUT_MS);
+
     try {
-      const resp = await Promise.race([chrome.runtime.sendMessage(payload), timeout]);
-      if (!resp) {
-        return { ok: false, error: "后台没有响应，请在 chrome://extensions 里重新加载插件后刷新页面。" };
-      }
-      return resp;
+      port = chrome.runtime.connect({ name: "deepseek-stream" });
     } catch (e) {
+      clearTimeout(timer);
+      finished = true;
       const msg = String(e?.message || e);
       if (/context invalidated/i.test(msg)) {
-        return { ok: false, error: "插件刚刚更新过，请刷新这个页面后再试。" };
+        onError("插件刚刚更新过，请刷新这个页面后再试。");
+      } else {
+        onError(`连接后台失败：${msg}`);
       }
-      return { ok: false, error: msg };
+      return () => {};
     }
+
+    port.onMessage.addListener((msg) => {
+      if (finished || !msg) return;
+
+      if (msg.type === "CHUNK") {
+        onChunk(msg.delta || "");
+      } else if (msg.type === "DONE") {
+        finished = true;
+        clearTimeout(timer);
+        try { port.disconnect(); } catch (_) {}
+        onDone(msg.content || "", msg.model);
+      } else if (msg.type === "ERROR" || msg.ok === false) {
+        finished = true;
+        clearTimeout(timer);
+        try { port.disconnect(); } catch (_) {}
+        onError(msg.error || "未知错误");
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      const err = chrome.runtime.lastError?.message;
+      if (err && /context invalidated/i.test(err)) {
+        onError("插件刚刚更新过，请刷新这个页面后再试。");
+      } else if (err) {
+        onError(`连接断开：${err}`);
+      }
+    });
+
+    port.postMessage({ type: "START", ...payload });
+
+    return () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      try { port.disconnect(); } catch (_) {}
+    };
   }
 
   async function runAction(mode, article, btn) {
     let st = getState(article);
+
+    // Cancel in-flight translate if user clicks the button again
+    if (mode === "translate" && st.cancel) {
+      try { st.cancel(); } catch (_) {}
+      st.cancel = null;
+      setBusy(btn, false);
+      if (st.block?.isConnected) st.block.remove();
+      btn.dataset.active = "0";
+      return;
+    }
 
     if (mode === "translate" && st.cache.translate) {
       if (st.block?.isConnected) {
@@ -487,29 +548,79 @@
       return;
     }
 
-    const resp = await requestDeepSeek({
-      type: "DEEPSEEK_RUN",
+    const payload = {
       mode,
       text,
       quotedText: extractQuotedText(tweetTextEl),
       targetLang: settings.targetLang,
-    });
+    };
 
-    setBusy(btn, false);
-
-    if (!resp || !resp.ok) {
-      const message = resp?.error || "未知错误";
-      if (mode === "explain") setPopupText(message, true);
-      else renderInline(article, tweetTextEl, message, true);
-      return;
-    }
-
-    st.cache[mode] = resp.content;
     if (mode === "explain") {
-      setPopupText(resp.content, false);
+      let isFirstChunk = true;
+      popup.cancel = streamDeepSeek(payload, {
+        onChunk(delta) {
+          if (isFirstChunk) {
+            isFirstChunk = false;
+            setBusy(btn, false);
+            if (popup.body) {
+              popup.body.textContent = "";
+              popup.body.classList.remove("ds-error");
+            }
+          }
+          if (popup.body) {
+            popup.body.textContent += delta;
+            popup.body.scrollTop = popup.body.scrollHeight;
+          }
+          positionPopup();
+        },
+        onDone(fullContent) {
+          setBusy(btn, false);
+          st.cache.explain = fullContent;
+          popup.cancel = null;
+          positionPopup();
+        },
+        onError(error) {
+          setBusy(btn, false);
+          setPopupText(error, true);
+          popup.cancel = null;
+        },
+      });
     } else {
-      renderInline(article, tweetTextEl, resp.content, false);
-      if (btn?.isConnected) btn.dataset.active = "1";
+      let isFirstChunk = true;
+      const block = renderInline(article, tweetTextEl, "", false);
+      const bodyEl = block?.querySelector("div:last-child");
+      if (bodyEl) {
+        bodyEl.textContent = "正在翻译…";
+        bodyEl.style.opacity = "0.7";
+      }
+
+      st.cancel = streamDeepSeek(payload, {
+        onChunk(delta) {
+          if (isFirstChunk) {
+            isFirstChunk = false;
+            setBusy(btn, false);
+            if (btn?.isConnected) btn.dataset.active = "1";
+            if (bodyEl) {
+              bodyEl.textContent = "";
+              bodyEl.style.opacity = "1";
+            }
+          }
+          if (bodyEl) {
+            bodyEl.textContent += delta;
+          }
+        },
+        onDone(fullContent) {
+          setBusy(btn, false);
+          if (btn?.isConnected) btn.dataset.active = "1";
+          st.cache.translate = fullContent;
+          st.cancel = null;
+        },
+        onError(error) {
+          setBusy(btn, false);
+          st.cancel = null;
+          renderInline(article, tweetTextEl, error, true);
+        },
+      });
     }
   }
 

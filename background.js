@@ -64,19 +64,162 @@ function buildMessages(mode, text, quotedText, targetLang) {
   ];
 }
 
+function buildRequestBody(mode, text, quotedText, targetLang, settings, stream = true) {
+  const model = mode === "explain" ? settings.explainModel : settings.translateModel;
+  return {
+    model,
+    stream,
+    thinking: { type: "disabled" },
+    temperature: TEMPERATURES[mode] ?? 1.0,
+    messages: buildMessages(mode, text, quotedText, targetLang || settings.targetLang),
+  };
+}
+
+function parseSSEChunk(buffer, newChunk, onDelta) {
+  buffer += newChunk;
+  const lines = buffer.split("\n");
+  buffer = lines.pop() ?? "";
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || !line.startsWith("data:")) continue;
+    const dataStr = line.slice(5).trim();
+    if (dataStr === "[DONE]") continue;
+    try {
+      const json = JSON.parse(dataStr);
+      const delta = json.choices?.[0]?.delta?.content;
+      if (delta) onDelta(delta);
+    } catch (_) {}
+  }
+  return buffer;
+}
+
+async function handleStreamRequest(port, payload) {
+  const settings = await getSettings();
+  if (!settings.apiKey) {
+    try {
+      port.postMessage({ ok: false, type: "ERROR", error: "还没有配置 DeepSeek API Key，请点击插件图标进入设置填写。" });
+    } catch (_) {}
+    return;
+  }
+
+  const { mode, text, quotedText, targetLang } = payload;
+  const body = buildRequestBody(mode, text, quotedText, targetLang, settings, true);
+  const controller = new AbortController();
+
+  const onDisconnect = () => {
+    controller.abort();
+  };
+  port.onDisconnect.addListener(onDisconnect);
+
+  let resp;
+  for (let attempt = 0; ; attempt++) {
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      resp = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${settings.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if (controller.signal.aborted) return;
+      try {
+        port.postMessage({ ok: false, type: "ERROR", error: `网络请求失败：${String(e)}` });
+      } catch (_) {}
+      return;
+    }
+    clearTimeout(timer);
+
+    if (resp.ok) break;
+
+    let detail = "";
+    try {
+      detail = (await resp.text()).slice(0, 300);
+    } catch (_) {}
+
+    if (RETRY_STATUSES.has(resp.status) && attempt < RETRY_DELAYS_MS.length) {
+      await sleep(RETRY_DELAYS_MS[attempt]);
+      if (controller.signal.aborted) return;
+      continue;
+    }
+
+    const busyHint =
+      resp.status === 503
+        ? `DeepSeek 服务当前过载，已自动重试 ${RETRY_DELAYS_MS.length} 次仍失败，请稍后再试或换一个模型。\n`
+        : "";
+    try {
+      port.postMessage({
+        ok: false,
+        type: "ERROR",
+        error: `${busyHint}DeepSeek API 返回错误 (${resp.status}，模型 ${body.model})：${detail}`,
+      });
+    } catch (_) {}
+    return;
+  }
+
+  if (!resp.body) {
+    try {
+      port.postMessage({ ok: false, type: "ERROR", error: "DeepSeek API 返回了空的数据流。" });
+    } catch (_) {}
+    return;
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  let accumulated = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunkStr = decoder.decode(value, { stream: true });
+      buffer = parseSSEChunk(buffer, chunkStr, (delta) => {
+        accumulated += delta;
+        try {
+          port.postMessage({ ok: true, type: "CHUNK", delta });
+        } catch (_) {}
+      });
+    }
+    if (buffer.trim()) {
+      parseSSEChunk(buffer, "\n", (delta) => {
+        accumulated += delta;
+        try {
+          port.postMessage({ ok: true, type: "CHUNK", delta });
+        } catch (_) {}
+      });
+    }
+  } catch (e) {
+    if (controller.signal.aborted) return;
+    try {
+      port.postMessage({ ok: false, type: "ERROR", error: `数据读取中断：${String(e)}` });
+    } catch (_) {}
+    return;
+  }
+
+  if (!accumulated) {
+    try {
+      port.postMessage({ ok: false, type: "ERROR", error: "DeepSeek 返回了空结果。" });
+    } catch (_) {}
+    return;
+  }
+
+  try {
+    port.postMessage({ ok: true, type: "DONE", content: accumulated, model: body.model });
+  } catch (_) {}
+}
+
 async function callDeepSeek(mode, text, quotedText, targetLang) {
   const settings = await getSettings();
   if (!settings.apiKey) {
     return { ok: false, error: "还没有配置 DeepSeek API Key，请点击插件图标进入设置填写。" };
   }
 
-  const model = mode === "explain" ? settings.explainModel : settings.translateModel;
-  const body = {
-    model,
-    stream: false,
-    temperature: TEMPERATURES[mode] ?? 1.0,
-    messages: buildMessages(mode, text, quotedText, targetLang || settings.targetLang),
-  };
+  const body = buildRequestBody(mode, text, quotedText, targetLang, settings, false);
 
   let resp;
   for (let attempt = 0; ; attempt++) {
@@ -95,7 +238,7 @@ async function callDeepSeek(mode, text, quotedText, targetLang) {
     } catch (e) {
       clearTimeout(timer);
       if (e?.name === "AbortError") {
-        return { ok: false, error: `请求超时（模型 ${model} 没有在限定时间内返回）。` };
+        return { ok: false, error: `请求超时（模型 ${body.model} 没有在限定时间内返回）。` };
       }
       return { ok: false, error: `网络请求失败：${String(e)}` };
     }
@@ -114,10 +257,9 @@ async function callDeepSeek(mode, text, quotedText, targetLang) {
     }
     const busyHint =
       resp.status === 503
-        ? `DeepSeek 服务当前过载，已自动重试 ${RETRY_DELAYS_MS.length} 次仍失败，请稍后再试或换一个模型。
-`
+        ? `DeepSeek 服务当前过载，已自动重试 ${RETRY_DELAYS_MS.length} 次仍失败，请稍后再试或换一个模型。\n`
         : "";
-    return { ok: false, error: `${busyHint}DeepSeek API 返回错误 (${resp.status}，模型 ${model})：${detail}` };
+    return { ok: false, error: `${busyHint}DeepSeek API 返回错误 (${resp.status}，模型 ${body.model})：${detail}` };
   }
 
   let data;
@@ -129,23 +271,46 @@ async function callDeepSeek(mode, text, quotedText, targetLang) {
 
   const content = data?.choices?.[0]?.message?.content?.trim();
   if (!content) return { ok: false, error: "DeepSeek 返回了空结果。" };
-  return { ok: true, content, model };
+  return { ok: true, content, model: body.model };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type === "DEEPSEEK_RUN") {
-    (async () => {
-      sendResponse(
-        await callDeepSeek(msg.mode, msg.text, msg.quotedText, msg.targetLang)
-      );
-    })();
-    return true; // keep the message channel open for the async response
-  }
+if (typeof chrome !== "undefined" && chrome.runtime?.onConnect) {
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== "deepseek-stream") return;
+    port.onMessage.addListener((msg) => {
+      if (msg?.type === "START") {
+        handleStreamRequest(port, msg);
+      }
+    });
+  });
+}
 
-  if (msg?.type === "DEEPSEEK_TEST_KEY") {
-    (async () => {
-      sendResponse(await callDeepSeek("translate", "Hello, world!", "", "简体中文"));
-    })();
-    return true;
-  }
-});
+if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === "DEEPSEEK_RUN") {
+      (async () => {
+        sendResponse(
+          await callDeepSeek(msg.mode, msg.text, msg.quotedText, msg.targetLang)
+        );
+      })();
+      return true; // keep the message channel open for the async response
+    }
+
+    if (msg?.type === "DEEPSEEK_TEST_KEY") {
+      (async () => {
+        sendResponse(await callDeepSeek("translate", "Hello, world!", "", "简体中文"));
+      })();
+      return true;
+    }
+  });
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    DEFAULTS,
+    TEMPERATURES,
+    buildMessages,
+    buildRequestBody,
+    parseSSEChunk,
+  };
+}
