@@ -66,7 +66,7 @@
 
 1. 将本项目源码下载或克隆到本地：
    ```bash
-   git clone https://github.com/Havadking/deepseek-twitter-translate.git
+   git clone https://github.com/Havadking/x-flow.git
    ```
 2. 打开 Chromium 核心浏览器（如 Google Chrome、Microsoft Edge、Brave 等），在地址栏访问：
    - Chrome: `chrome://extensions/`
